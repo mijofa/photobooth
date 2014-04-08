@@ -14,6 +14,8 @@ from kivy.uix.scatter import Scatter
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.floatlayout import FloatLayout
 
+import time
+
 ### Mirror the camera widget
 ## Source: https://gist.github.com/alanctkc/c59ca9fd83fff6259289
 ## I believe the 2 Translate sections could be replaced with setting the origin key in the Rotate section, but that can't be done in version 1.6.0
@@ -40,7 +42,7 @@ class MirrorCamera(Camera):
 ###
     def capture_image(self, *args, **kwargs):
         # Capture an image.
-        filename = "/tmp/capture-%d_%f.png" % (self.index, kivy.clock.time()) # Didn't seem worth importing time separetly when kivy.clock has done so.
+        filename = "/tmp/capture-%d_%f.png" % (self.index, time.time())
         if self.texture != None: # Camera not connected?
             try: print(self.texture.save(filename, flipped=False))
             except AttributeError: pass # Might be an older version of Kivy
