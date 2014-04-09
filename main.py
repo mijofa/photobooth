@@ -40,14 +40,36 @@ class MirrorCamera(Camera):
         self.texture_size = list(self.texture.size)
         self.texture.flip_vertical()
 ###
-    def capture_image(self, *args, **kwargs):
+    repeats = 0
+    repeat_num = 0
+    repeat_interval = 0.2
+    def capture_image(self, dt = None, repeats = None, interval = None, *args, **kwargs):
+        self.color = [5,5,5,1]
+        if repeats != None:
+            self.repeats = repeats
+        if interval != None:
+            self.repeat_interval = interval
+        Clock.schedule_once(self._actual_capture, 0.05)
+    def _actual_capture(self, *args, **kwargs):
         # Capture an image.
         filename = "/tmp/capture-%d_%f.png" % (self.index, time.time())
+        self.flash_reset()
         if self.texture != None: # Camera not connected?
             try: self.texture.save(filename, flipped=False)
-            except AttributeError: pass # Might be an older version of Kivy
-        self.color = [5,5,5,1]
-        Clock.schedule_once(self.flash_reset, 0.05)
+            except AttributeError: # Might be an older version of Kivy
+                self.color = [0,0,0,1]
+                time.sleep(0.1)
+        self.flash_reset()
+        self.repeat_num += 1
+        if self.repeat_num >= self.repeats or self.repeats == 0:
+            print "Finished, resetting"
+            self.reapt_interval = 0.2
+            self.repeat_num = 0
+            self.repeats = 0
+            return False
+        elif self.repeats >  0:
+            Clock.schedule_once(self.capture_image, self.repeat_interval)
+            return True
     def flash_reset(self, *args, **kwargs):
         self.color = [1,1,1,1]
 
@@ -64,10 +86,8 @@ class Main(App):
             self.info.text = "Smile!"
         elif self.countdown_number.text == '0': # Finished the countdown.
             self.info.text = ''
-            Clock.schedule_once(cameras[0].capture_image, 0.0) # I could have done these 3 as a schedule_interval and have it return False after 3 runs the same way this function does... But that was too hard.
-            Clock.schedule_once(cameras[0].capture_image, 0.2)
-            Clock.schedule_once(cameras[0].capture_image, 0.4)
-            Clock.schedule_once(lambda args: setattr(self.info, 'text', "Touch screen to take photo"), 0.5) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
+            cameras[0].capture_image(repeats=3)
+            Clock.schedule_once(lambda args: setattr(self.info, 'text', "Touch screen to take photo"), 0.8) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
             self.info.text = ''
             self.countdown_number.text = ''
             return False # This removes the function from the schedule_interval
