@@ -1,4 +1,6 @@
 #!/usr/bin/python
+import cPickle as pickle
+
 import kivy
 kivy.require('1.6.0') # This is the version available in the Debian Wheezy apt repo, I would prefer to remain compatible with that.
 ### So with Kivy 1.6.0 on my netbook the scatter().rotation works, but the Camera().texture.flip_vertical() does no. Is this the Kivy version or the camera?
@@ -35,48 +37,49 @@ Builder.load_string("""
 
 """)
 class MirrorCamera(Camera):
-    def _camera_loaded(self, *largs): # I really don't like overriding this function, but it works so I'm not touching it anymore
-        self.texture = self._camera.texture
-        self.texture_size = list(self.texture.size)
-        self.texture.flip_vertical()
-###
-    def __init__(self, *args, **kwargs):
-        self.register_event_type('on_capture_end')
-        super(MirrorCamera, self).__init__(*args, **kwargs)
-    def on_capture_end(self, *args, **kwargs):
-        print 'on_capture_end'
+#    def _camera_loaded(self, *largs): # I really don't like overriding this function, but it works so I'm not touching it anymore
+#        self.texture = self._camera.texture
+#        self.texture_size = list(self.texture.size)
+#        self.texture.flip_vertical()
+### YAY! I got rid of it.
+### 
     repeats = 0
     repeat_num = 0
     repeat_interval = 0.2
+    def __init__(self, *args, **kwargs):
+        self.register_event_type('on_capture_end')
+        super(MirrorCamera, self).__init__(*args, **kwargs)
+        self._camera.bind(on_texture=lambda args: self.texture.flip_vertical()) # I use lambda here because self.texture.flip_vertical doesn't exist yet. # This line replaces the commented out _camera_loaded function above.
+    def on_capture_end(self, *args, **kwargs):
+        # This triggers when all repeated image captures are finished.
+        # I use this to reset the info text when finished.
+        pass
     def capture_image(self, dt = None, repeats = None, interval = None, *args, **kwargs):
+        # This function just sets the colour of the widget to lots of white to simulate a flash then tells the Clock to actually capture an image after rendering the next frame.
+        # I split this into 2 functions because if capture th image before rendering the next frame the "flash" never gets rendered
         self.color = [5,5,5,1]
         if repeats != None:
             self.repeats = repeats
         if interval != None:
             self.repeat_interval = interval
-        Clock.schedule_once(self._actual_capture, 0.05)
+        Clock.schedule_once(self._actual_capture, 0)
     def _actual_capture(self, *args, **kwargs):
-        # Capture an image.
-        filename = "/tmp/capture-%d_%f.png" % (self.index, time.time())
-        self.flash_reset()
+        # Capture an image, then reset the simulated flash
+        filename = "/mnt/tmp/capture-%d_%f.jpg" % (self.index, time.time())
         if self.texture != None: # Camera not connected?
             try: self.texture.save(filename, flipped=False)
-            except AttributeError: # Might be an older version of Kivy
-                self.color = [0,0,0,1]
-                time.sleep(0.1)
-        self.flash_reset()
+            except AttributeError: pass # Might be an older version of Kivy
+        self.color = [1,1,1,1]
         self.repeat_num += 1
         if self.repeat_num >= self.repeats or self.repeats == 0:
             self.repeat_interval = 0.2
             self.repeat_num = 0
             self.repeats = 0
-            self.dispatch('on_capture_end')
+            Clock.schedule_once(lambda args: self.dispatch('on_capture_end'), self.repeat_interval)
             return False
         elif self.repeats >  0:
             Clock.schedule_once(self.capture_image, self.repeat_interval)
             return True
-    def flash_reset(self, *args, **kwargs):
-        self.color = [1,1,1,1]
 
 cameras = [MirrorCamera(index=0, resolution=(1280,960), size=(640,480), play=True), MirrorCamera(index=1, resolution=(1280,960), size=(640,480), play=True)] # Capture the highest possible resolution (current v4l + USB2 can't handle more than 720p) but only display low res. This give me highest possible image captures with a standard size widget regardless what cameras are used.
 
@@ -86,14 +89,14 @@ class Main(App):
             Clock.schedule_interval(self.countdown, 1)
             self.info.text = "Get ready..."
             self.countdown_number.text = '3' # FINDME: Countdown length.
-            return
+            return True
         elif self.countdown_number.text == '1':
             self.info.text = "Smile!"
         elif self.countdown_number.text == '0': # Finished the countdown.
             self.info.text = ''
             self.countdown_number.text = ''
             cameras[0].capture_image(repeats=3)
-            return False # This removes the function from the schedule_interval
+            return False
         self.countdown_number.text = str(int(self.countdown_number.text)-1)
     def build(self):
         self.root = FloatLayout()
@@ -101,7 +104,7 @@ class Main(App):
         cameras[0].pos_hint['center'] = [0.5,0.5]
         cameras[0].bind(on_touch_down=self.countdown)
         cameras[0].bind(on_capture_end=lambda args: setattr(self.info, 'text', "Touch screen to take photo")) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
-        self.info = Label(text="Touch screen to take photo", color=[1,0,0,1], font_size=32, pos_hint={'center': [0.5,0.9]})
+        self.info = Label(text="Touch screen to take photo", color=[1,0,0,1], font_size=32, pos_hint={'center': [0.5,0.95]})
         self.root.add_widget(self.info)
         self.countdown_number = Label(text='', color=[0,1,0,0.5], font_size=256, pos_hint={'center': [0.5,0.5]})
         self.root.add_widget(self.countdown_number)
