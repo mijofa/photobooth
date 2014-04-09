@@ -44,7 +44,7 @@ class MirrorCamera(Camera):
         # Capture an image.
         filename = "/tmp/capture-%d_%f.png" % (self.index, time.time())
         if self.texture != None: # Camera not connected?
-            try: print(self.texture.save(filename, flipped=False))
+            try: self.texture.save(filename, flipped=False)
             except AttributeError: pass # Might be an older version of Kivy
         self.color = [5,5,5,1]
         Clock.schedule_once(self.flash_reset, 0.05)
