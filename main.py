@@ -40,6 +40,11 @@ class MirrorCamera(Camera):
         self.texture_size = list(self.texture.size)
         self.texture.flip_vertical()
 ###
+    def __init__(self, *args, **kwargs):
+        self.register_event_type('on_capture_end')
+        super(MirrorCamera, self).__init__(*args, **kwargs)
+    def on_capture_end(self, *args, **kwargs):
+        print 'on_capture_end'
     repeats = 0
     repeat_num = 0
     repeat_interval = 0.2
@@ -62,10 +67,10 @@ class MirrorCamera(Camera):
         self.flash_reset()
         self.repeat_num += 1
         if self.repeat_num >= self.repeats or self.repeats == 0:
-            print "Finished, resetting"
-            self.reapt_interval = 0.2
+            self.repeat_interval = 0.2
             self.repeat_num = 0
             self.repeats = 0
+            self.dispatch('on_capture_end')
             return False
         elif self.repeats >  0:
             Clock.schedule_once(self.capture_image, self.repeat_interval)
@@ -86,10 +91,8 @@ class Main(App):
             self.info.text = "Smile!"
         elif self.countdown_number.text == '0': # Finished the countdown.
             self.info.text = ''
-            cameras[0].capture_image(repeats=3)
-            Clock.schedule_once(lambda args: setattr(self.info, 'text', "Touch screen to take photo"), 0.8) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
-            self.info.text = ''
             self.countdown_number.text = ''
+            cameras[0].capture_image(repeats=3)
             return False # This removes the function from the schedule_interval
         self.countdown_number.text = str(int(self.countdown_number.text)-1)
     def build(self):
@@ -97,6 +100,7 @@ class Main(App):
         self.root.add_widget(cameras[0])
         cameras[0].pos_hint['center'] = [0.5,0.5]
         cameras[0].bind(on_touch_down=self.countdown)
+        cameras[0].bind(on_capture_end=lambda args: setattr(self.info, 'text', "Touch screen to take photo")) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
         self.info = Label(text="Touch screen to take photo", color=[1,0,0,1], font_size=32, pos_hint={'center': [0.5,0.9]})
         self.root.add_widget(self.info)
         self.countdown_number = Label(text='', color=[0,1,0,0.5], font_size=256, pos_hint={'center': [0.5,0.5]})
