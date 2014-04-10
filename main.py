@@ -1,6 +1,4 @@
 #!/usr/bin/python
-import cPickle as pickle
-
 import kivy
 kivy.require('1.6.0') # This is the version available in the Debian Wheezy apt repo, I would prefer to remain compatible with that.
 ### So with Kivy 1.6.0 on my netbook the scatter().rotation works, but the Camera().texture.flip_vertical() does no. Is this the Kivy version or the camera?
