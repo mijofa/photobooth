@@ -9,6 +9,7 @@ kivy.require('1.6.0') # This is the version available in the Debian Wheezy apt r
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.clock import Clock
+from kivy.graphics import Ellipse
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.camera import Camera
@@ -34,7 +35,6 @@ Builder.load_string("""
             xy: (-self.x - self.width / 2, -self.y - self.height / 2)
     canvas.after:
         PopMatrix
-
 """)
 class MirrorCamera(Camera):
 #    def _camera_loaded(self, *largs): # I really don't like overriding this function, but it works so I'm not touching it anymore
@@ -80,34 +80,98 @@ class MirrorCamera(Camera):
         elif self.repeats >  0:
             Clock.schedule_once(self.capture_image, self.repeat_interval)
             return True
+    def capture_video(self, length, audio):
+        print "NOT IMPLEMENTED: Recording %d seconds of video%s" % (length, " and audio." if audio else '.')
+        Clock.schedule_once(lambda args: self.dispatch('on_capture_end'), length)
 
 cameras = [MirrorCamera(index=0, resolution=(1280,960), size=(640,480), play=True), MirrorCamera(index=1, resolution=(1280,960), size=(640,480), play=True)] # Capture the highest possible resolution (current v4l + USB2 can't handle more than 720p) but only display low res. This give me highest possible image captures with a standard size widget regardless what cameras are used.
 
 class Main(App):
-    def countdown(self, *args, **kwargs):
+    def countdown(self, btn = None):
+        if btn != None and type(btn) != float and type(btn) != int:
+            Clock.unschedule(self.countdown)
+            self.countdown_info = btn.countdown_info
         if self.countdown_number.text == '': # Countdown hasn't been run yet.
             Clock.schedule_interval(self.countdown, 1)
             self.info.text = "Get ready..."
             self.countdown_number.text = '3' # FINDME: Countdown length.
             return True
         elif self.countdown_number.text == '1':
-            self.info.text = "Smile!"
+            self.info.text = self.countdown_info['final_text']
         elif self.countdown_number.text == '0': # Finished the countdown.
             self.info.text = ''
             self.countdown_number.text = ''
-            cameras[0].capture_image(repeats=3)
+            if self.countdown_info['capture_type'] == 'picture':
+                cameras[0].capture_image(repeats=3)
+            elif self.countdown_info['capture_type'] == 'video':
+                self.recording_indicator.color = [0,1,0,1]
+                cameras[0].capture_video(length=10, audio=False)
+            elif self.countdown_info['capture_type'] == 'audio_video':
+                self.recording_indicator.color = [1,0,0,1]
+                cameras[0].capture_video(length=10, audio=True)
             return False
         self.countdown_number.text = str(int(self.countdown_number.text)-1)
+    def display_reset(self, *args):
+        self.info.text = "Touch screen to take photo"
+        self.recording_indicator.color = [0,0,0,0]
     def build(self):
         self.root = FloatLayout()
+
+        cameras[0].pos_hint['center'] = [0.5,0.55]
+        cameras[0].size_hint = [1,0.9]
+#        cameras[0].bind(on_touch_down=self.countdown)
+        cameras[0].bind(on_capture_end=self.display_reset) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
         self.root.add_widget(cameras[0])
-        cameras[0].pos_hint['center'] = [0.5,0.5]
-        cameras[0].bind(on_touch_down=self.countdown)
-        cameras[0].bind(on_capture_end=lambda args: setattr(self.info, 'text', "Touch screen to take photo")) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
+
+        self.recording_indicator = Label(pos_hint={'top': 0.95, 'right': 0.95}, color=[0,0,0,0], size_hint=(0.05,0.05))
+        self.recording_indicator.ellipse = Ellipse(pos=self.recording_indicator.pos, size=(self.recording_indicator.size[0], self.recording_indicator.size[0]))
+        self.recording_indicator.canvas.add(self.recording_indicator.ellipse)
+        def update_ellipse(instance, value):
+            instance.ellipse.size = instance.size[0], instance.size[0] # Using size_hint above doesn't garauntee a square, but I want the circle size to be locked to being a square.
+            instance.ellipse.pos = instance.pos
+        self.recording_indicator.bind(size=update_ellipse, pos=update_ellipse)
+        self.root.add_widget(self.recording_indicator)
+
+        picture_btn = Button(size_hint=[0.33, 0.1], on_press=self.countdown,
+                pos_hint={'top': 0.1, 'left': '0'},
+                text="Picture",
+                background_color=[0,0,1,1],
+            )
+        picture_btn.countdown_info = {
+                'final_text': "Smile!",
+                'capture_type': 'picture'
+            }
+        self.root.add_widget(picture_btn)
+
+        video_btn = Button(size_hint=[0.33, 0.1], on_press=self.countdown,
+                pos_hint={'top': 0.1, 'center_x': 0.5},
+                text='10s Video',
+                background_color=[0,1,0,1],
+            )
+        video_btn.countdown_info = {
+                'final_text': "Action!",
+                'capture_type': 'video'
+            }
+        self.root.add_widget(video_btn)
+
+        audio_video_btn = Button(size_hint=[0.33, 0.1], on_press=self.countdown,
+                pos_hint={'top': 0.1, 'right': 1},
+                text='10s Video with audio',
+                background_color=[1,0,0,1],
+            )
+        audio_video_btn.countdown_info = {
+                'final_text': "Action!",
+                'capture_type': 'audio_video'
+            }
+
+        self.root.add_widget(audio_video_btn)
+
         self.info = Label(text="Touch screen to take photo", color=[1,0,0,1], font_size=32, pos_hint={'center': [0.5,0.95]})
         self.root.add_widget(self.info)
+
         self.countdown_number = Label(text='', color=[0,1,0,0.5], font_size=256, pos_hint={'center': [0.5,0.5]})
         self.root.add_widget(self.countdown_number)
+
         return self.root
 
 Main().run()
