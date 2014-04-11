@@ -10,10 +10,18 @@ from kivy.clock import Clock
 from kivy.graphics import Ellipse
 from kivy.uix.label import Label
 from kivy.uix.button import Button
-from kivy.uix.camera import Camera
 from kivy.uix.scatter import Scatter
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.floatlayout import FloatLayout
+
+import kivy.core.camera.camera_gstreamer
+class FilesaveCameraGStreamer(kivy.core.camera.camera_gstreamer.CameraGStreamer):
+    def __init__(self, *args, **kwargs):
+        super(FilesaveCameraGStreamer, self).__init__(video_src='v4l2src ! tee name=tee ! jpegenc ! avimux ! filesink async=0 location=/tmp/photobooth.avi  tee.', *args, **kwargs)
+    def init_camera(self):
+        super(FilesaveCameraGStreamer, self).init_camera()
+kivy.core.camera.Camera = FilesaveCameraGStreamer
+from kivy.uix.camera import Camera
 
 import time
 
