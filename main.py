@@ -15,13 +15,70 @@ from kivy.uix.scatter import Scatter
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.floatlayout import FloatLayout
 
-import kivy.core.camera.camera_gstreamer
-class FilesaveCameraGStreamer(kivy.core.camera.camera_gstreamer.CameraGStreamer):
-    def __init__(self, *args, **kwargs):
-        super(FilesaveCameraGStreamer, self).__init__(video_src='v4l2src ! tee name=tee ! jpegenc ! avimux ! filesink async=0 location=/tmp/photobooth.avi  tee.', *args, **kwargs)
+
+# Seems CameraGStreamer got renamed between Kivy v1.6.0 and 1.8.0, this whole thing is a horrible hack anyway lets add more hackiness.
+# I can't just reimport gst because that causes errors for some reason, so I need to set gst to the module already loaded in the kivy camera module.
+try:
+    import kivy.core.camera.camera_gstreamer
+    CameraGst = kivy.core.camera.camera_gstreamer.CameraGStreamer
+    gst = kivy.core.camera.camera_gstreamer.gst
+except:
+    import kivy.core.camera.camera_pygst
+    CameraGst = kivy.core.camera.camera_pygst.CameraPyGst
+    gst = kivy.core.camera.camera_pygst.gst
+class FilesaveCameraGst(CameraGst):
+#    def __init__(self, *args, **kwargs):
+#        super(FilesaveCameraGst, self).__init__(video_src='queue name=cambinqueue ', *args, **kwargs)
     def init_camera(self):
-        super(FilesaveCameraGStreamer, self).init_camera()
-kivy.core.camera.Camera = FilesaveCameraGStreamer
+        self._cambin = gst.element_factory_make('camerabin', 'camerabin')
+        self._cambin.set_property('mode', 1)
+
+        # I don't like that I've copied the original code into here instead of using super but I needed to make some changes.
+        # But it was the only way I could find to make this function stop loading it's own v4l2src and use mine instead.
+
+        GL_CAPS = 'video/x-raw-rgb,red_mask=(int)0xff0000,' + \
+                  'green_mask=(int)0x00ff00,blue_mask=(int)0x0000ff'
+        pl = 'decodebin name=decoder ! ffmpegcolorspace ! appsink ' + \
+             'name=camerasink emit-signals=True caps=%s'
+        self._pipeline = gst.parse_launch(pl % GL_CAPS)
+        self._camerasink = self._pipeline.get_by_name('camerasink')
+        self._camerasink.connect('new-buffer', self._gst_new_buffer)
+        self._decodebin = self._pipeline.get_by_name('decoder')
+
+        self._pipeline.add(self._cambin)
+        if self._camerasink and not self.stopped:
+            self.start()
+
+        self._cambin.set_property('viewfinder-sink', self._pipeline.get_by_name('decoder'))
+        self._cambin.set_state(gst.STATE_PLAYING)
+
+    def capture_video_stop(self):
+        self._cambin.emit('capture-stop')
+#    def enable_audio_record(self):
+#        # self._audiosrc
+#        # autoaudiosrc ! audioconvert ! vorbisenc ! self._muxer
+#        self._audiosrc = gst.element_factory_make('autoaudiosrc', 'audiosrc')
+#        self._pipeline.add(self._audiosrc)
+#
+#        self._audioconvert = gst.element_factory_make('audioconvert', 'audioconvert')
+#        self._pipeline.add(self._audioconvert)
+#
+#        self._audiocaps = gst.element_factory_make('capsfilter', 'audiocaps')
+#        self._pipeline.add(self._audiocaps)
+#        self._audiocaps.set_property("caps", gst.Caps("audio/x-raw-int,rate=48000,channels=1,depth=16"))
+#
+#        gst.element_link_many(self._audiosrc, self._audiocaps, self._audioconvert, self._muxer)
+    def capture_video_start(self, filename):
+#        self._cambin.set_property('mode', 1) # Changing mode mid-stream seems to break things.
+        self._cambin.set_property('filename', filename)
+        self._cambin.emit('capture-start')
+    def capture_image(self, filename):
+        pass # Looks like changing the mode mid-stream doesn't work, so only capturing video through this method for now.
+#        self._cambin.set_property('mode', 0) 
+#        self._cambin.set_property('filename', filename)
+#        self._cambin.emit('capture-start')
+
+kivy.core.camera.Camera = FilesaveCameraGst
 from kivy.uix.camera import Camera
 
 import time
@@ -61,7 +118,7 @@ class MirrorCamera(Camera):
         # This triggers when all repeated image captures are finished.
         # I use this to reset the info text when finished.
         pass
-    def capture_image(self, dt = None, repeats = None, interval = None, *args, **kwargs):
+    def capture_image(self, dt = None, repeats = None, interval = None):
         # This function just sets the colour of the widget to lots of white to simulate a flash then tells the Clock to actually capture an image after rendering the next frame.
         # I split this into 2 functions because if capture th image before rendering the next frame the "flash" never gets rendered
         self.color = [5,5,5,1]
@@ -70,9 +127,10 @@ class MirrorCamera(Camera):
         if interval != None:
             self.repeat_interval = interval
         Clock.schedule_once(self._actual_capture, 0)
-    def _actual_capture(self, *args, **kwargs):
+    def _actual_capture(self, dt = None):
         # Capture an image, then reset the simulated flash
         filename = "/mnt/tmp/capture-%d_%f.jpg" % (self.index, time.time())
+#        self._camera.capture_image(filename)
         if self.texture != None: # Camera not connected?
             try: self.texture.save(filename, flipped=False)
             except AttributeError: pass # Might be an older version of Kivy
@@ -87,9 +145,15 @@ class MirrorCamera(Camera):
         elif self.repeats >  0:
             Clock.schedule_once(self.capture_image, self.repeat_interval)
             return True
-    def capture_video(self, length, audio):
+    def start_vid_capture(self, length, audio):
         print "NOT IMPLEMENTED: Recording %d seconds of video%s" % (length, " and audio." if audio else '.')
-        Clock.schedule_once(lambda args: self.dispatch('on_capture_end'), length)
+        filename = "/mnt/tmp/capture-%d_%f.ogv" % (self.index, time.time())
+        self._camera.capture_video_start(filename)
+#        Clock.schedule_once(self._finish_capture_video, length)
+    def stop_vid_capture(self, dt = None):
+        self._camera.capture_video_stop()
+        self.dispatch('on_capture_end')
+        pass
 
 cameras = [MirrorCamera(index=0, resolution=(1280,960), size=(640,480), play=True), MirrorCamera(index=1, resolution=(1280,960), size=(640,480), play=True)] # Capture the highest possible resolution (current v4l + USB2 can't handle more than 720p) but only display low res. This give me highest possible image captures with a standard size widget regardless what cameras are used.
 
