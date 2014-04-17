@@ -7,7 +7,8 @@ kivy.require('1.6.0') # This is the version available in the Debian Wheezy apt r
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.clock import Clock
-from kivy.graphics import Ellipse
+from kivy.graphics import Rectangle
+from kivy.graphics import Color
 from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.scatter import Scatter
@@ -110,33 +111,58 @@ class Main(App):
             if self.countdown_info['capture_type'] == 'picture':
                 cameras[0].capture_image(repeats=3)
             elif self.countdown_info['capture_type'] == 'video':
-                self.recording_indicator.color = [0,1,0,1]
-                cameras[0].capture_video(length=10, audio=False)
+#                self.recording_indicator.color = [0,1,0,1]
+                self.recording_indicator.opacity = 1
+                self.recording_indicator.text = '10'
+                self.vid_timer(self.recording_indicator)
+                cameras[0].start_vid_capture(length=10, audio=False)
             elif self.countdown_info['capture_type'] == 'audio_video':
-                self.recording_indicator.color = [1,0,0,1]
-                cameras[0].capture_video(length=10, audio=True)
+                self.audio_recording_indicator.opacity = 1
+                self.audio_recording_indicator.text = '10'
+                self.vid_timer(self.audio_recording_indicator)
+                cameras[0].start_vid_capture(length=10, audio=True)
             return False
         self.countdown_number.text = str(int(self.countdown_number.text)-1)
+    def vid_timer(self, indicator): # indicator will actually be dt most of the time, but I ignore dt anyway.
+        if type(indicator) != int and type(indicator) != float:
+            self.timer = indicator
+            Clock.schedule_once(self.vid_timer, 1)
+            return
+        if self.timer.text != '0':
+            self.timer.text = str(int(self.timer.text)-1)
+            Clock.schedule_once(self.vid_timer, 1)
+        else:
+            self.timer.text = ''
+            cameras[0].stop_vid_capture()
     def display_reset(self, *args):
         self.info.text = "Touch screen to take photo"
-        self.recording_indicator.color = [0,0,0,0]
+        self.recording_indicator.opacity = 0
+        self.audio_recording_indicator.opacity = 0
     def build(self):
         self.root = FloatLayout()
 
         cameras[0].pos_hint['center'] = [0.5,0.55]
         cameras[0].size_hint = [1,0.9]
-#        cameras[0].bind(on_touch_down=self.countdown)
         cameras[0].bind(on_capture_end=self.display_reset) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
         self.root.add_widget(cameras[0])
 
-        self.recording_indicator = Label(pos_hint={'top': 0.95, 'right': 0.95}, color=[0,0,0,0], size_hint=(0.05,0.05))
-        self.recording_indicator.ellipse = Ellipse(pos=self.recording_indicator.pos, size=(self.recording_indicator.size[0], self.recording_indicator.size[0]))
-        self.recording_indicator.canvas.add(self.recording_indicator.ellipse)
-        def update_ellipse(instance, value):
-            instance.ellipse.size = instance.size[0], instance.size[0] # Using size_hint above doesn't garauntee a square, but I want the circle size to be locked to being a square.
-            instance.ellipse.pos = instance.pos
-        self.recording_indicator.bind(size=update_ellipse, pos=update_ellipse)
+        self.recording_indicator = Label(pos_hint={'top': 0.95, 'right': 0.95}, color=[1,1,1,1], size_hint=(0.05,0.05))
+        with self.recording_indicator.canvas.before:
+            self.recording_indicator.background_image = Rectangle(source='rec_noaud.png', size=self.recording_indicator.size, pos=self.recording_indicator.pos)
+        self.recording_indicator.opacity = 0
+
+        self.audio_recording_indicator = Label(pos_hint={'top': 0.95, 'right': 0.95}, color=[1,1,1,1], size_hint=(0.05,0.05))
+        with self.audio_recording_indicator.canvas.before:
+            self.audio_recording_indicator.background_image = Rectangle(source='rec_aud.png', size=self.audio_recording_indicator.size, pos=self.audio_recording_indicator.pos)
+        self.audio_recording_indicator.opacity = 0
+
+        def update_background(instance, value):
+            instance.background_image.size = instance.size[0], instance.size[0] # Using size_hint above doesn't garauntee a square, but I want the circle size to be locked to being a square.
+            instance.background_image.pos = instance.pos
+        self.recording_indicator.bind(size=update_background, pos=update_background)
+        self.audio_recording_indicator.bind(size=update_background, pos=update_background)
         self.root.add_widget(self.recording_indicator)
+        self.root.add_widget(self.audio_recording_indicator)
 
         picture_btn = Button(size_hint=[0.33, 0.1], on_press=self.countdown,
                 pos_hint={'top': 0.1, 'left': '0'},
