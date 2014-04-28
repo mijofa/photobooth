@@ -1,8 +1,12 @@
 #!/usr/bin/python
+import os.path
+
+
 import kivy
-kivy.require('1.6.0') # This is the version available in the Debian Wheezy apt repo, I would prefer to remain compatible with that.
+#kivy.require('1.6.0') # This is the version available in the Debian Wheezy apt repo, I would prefer to remain compatible with that.
 ### So with Kivy 1.6.0 on my netbook the scatter().rotation works, but the Camera().texture.flip_vertical() does no. Is this the Kivy version or the camera?
 ### Aww, Kivy 1.6.0 can't save camera textures either. :(
+# I give up 1.6.0 will not work with this at all
 
 from kivy.app import App
 from kivy.lang import Builder
@@ -15,9 +19,11 @@ from kivy.uix.scatter import Scatter
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.floatlayout import FloatLayout
 
+VIDEO_DEVICE = "/dev/v4l/by-id/usb-Vimicro_Corp._PC_Camera-video-index0"
+SAVE_PATH = "/mnt/tmp"
 
-# Seems CameraGStreamer got renamed between Kivy v1.6.0 and 1.8.0, this whole thing is a horrible hack anyway lets add more hackiness.
-# I can't just reimport gst because that causes errors for some reason, so I need to set gst to the module already loaded in the kivy camera module.
+## Seems CameraGStreamer got renamed between Kivy v1.6.0 and 1.8.0, this whole thing is a horrible hack anyway lets add more hackiness.
+## I can't just reimport gst because that causes errors for some reason, so I need to set gst to the module already loaded in the kivy camera module.
 try:
     import kivy.core.camera.camera_gstreamer
     CameraGst = kivy.core.camera.camera_gstreamer.CameraGStreamer
@@ -26,59 +32,15 @@ except:
     import kivy.core.camera.camera_pygst
     CameraGst = kivy.core.camera.camera_pygst.CameraPyGst
     gst = kivy.core.camera.camera_pygst.gst
-class FilesaveCameraGst(CameraGst):
-#    def __init__(self, *args, **kwargs):
-#        super(FilesaveCameraGst, self).__init__(video_src='queue name=cambinqueue ', *args, **kwargs)
+class CoreCamera(CameraGst):
+    # This is a bad hack, but I CBFed doing it properly.
+    # I need to be able to specify the device path rather than just the /dev/video index
     def init_camera(self):
-        self._cambin = gst.element_factory_make('camerabin', 'camerabin')
-        self._cambin.set_property('mode', 1)
-
-        # I don't like that I've copied the original code into here instead of using super but I needed to make some changes.
-        # But it was the only way I could find to make this function stop loading it's own v4l2src and use mine instead.
-
-        GL_CAPS = 'video/x-raw-rgb,red_mask=(int)0xff0000,' + \
-                  'green_mask=(int)0x00ff00,blue_mask=(int)0x0000ff'
-        pl = 'decodebin name=decoder ! ffmpegcolorspace ! appsink ' + \
-             'name=camerasink emit-signals=True caps=%s'
-        self._pipeline = gst.parse_launch(pl % GL_CAPS)
-        self._camerasink = self._pipeline.get_by_name('camerasink')
-        self._camerasink.connect('new-buffer', self._gst_new_buffer)
-        self._decodebin = self._pipeline.get_by_name('decoder')
-
-        self._pipeline.add(self._cambin)
-        if self._camerasink and not self.stopped:
-            self.start()
-
-        self._cambin.set_property('viewfinder-sink', self._pipeline.get_by_name('decoder'))
-        self._cambin.set_state(gst.STATE_PLAYING)
-
-    def capture_video_stop(self):
-        self._cambin.emit('capture-stop')
-#    def enable_audio_record(self):
-#        # self._audiosrc
-#        # autoaudiosrc ! audioconvert ! vorbisenc ! self._muxer
-#        self._audiosrc = gst.element_factory_make('autoaudiosrc', 'audiosrc')
-#        self._pipeline.add(self._audiosrc)
-#
-#        self._audioconvert = gst.element_factory_make('audioconvert', 'audioconvert')
-#        self._pipeline.add(self._audioconvert)
-#
-#        self._audiocaps = gst.element_factory_make('capsfilter', 'audiocaps')
-#        self._pipeline.add(self._audiocaps)
-#        self._audiocaps.set_property("caps", gst.Caps("audio/x-raw-int,rate=48000,channels=1,depth=16"))
-#
-#        gst.element_link_many(self._audiosrc, self._audiocaps, self._audioconvert, self._muxer)
-    def capture_video_start(self, filename):
-#        self._cambin.set_property('mode', 1) # Changing mode mid-stream seems to break things.
-        self._cambin.set_property('filename', filename)
-        self._cambin.emit('capture-start')
-    def capture_image(self, filename):
-        pass # Looks like changing the mode mid-stream doesn't work, so only capturing video through this method for now.
-#        self._cambin.set_property('mode', 0) 
-#        self._cambin.set_property('filename', filename)
-#        self._cambin.emit('capture-start')
-
-kivy.core.camera.Camera = FilesaveCameraGst
+        orig_video_src = self._video_src
+        try: self._video_src = 'v4l2src device=%s' % VIDEO_DEVICE
+        except: self._video_src = orig_video_src
+        super(CoreCamera, self).init_camera()
+kivy.core.camera.Camera = CoreCamera
 from kivy.uix.camera import Camera
 
 import time
@@ -101,12 +63,6 @@ Builder.load_string("""
         PopMatrix
 """)
 class MirrorCamera(Camera):
-#    def _camera_loaded(self, *largs): # I really don't like overriding this function, but it works so I'm not touching it anymore
-#        self.texture = self._camera.texture
-#        self.texture_size = list(self.texture.size)
-#        self.texture.flip_vertical()
-### YAY! I got rid of it.
-### 
     repeats = 0
     repeat_num = 0
     repeat_interval = 0.2
@@ -129,10 +85,10 @@ class MirrorCamera(Camera):
         Clock.schedule_once(self._actual_capture, 0)
     def _actual_capture(self, dt = None):
         # Capture an image, then reset the simulated flash
-        filename = "/mnt/tmp/capture-%d_%f.jpg" % (self.index, time.time())
-#        self._camera.capture_image(filename)
+
+        filename = "capture-%d_%f.jpg" % (self.index, time.time())
         if self.texture != None: # Camera not connected?
-            try: self.texture.save(filename, flipped=False)
+            try: self.texture.save(os.path.join(SAVE_PATH, filename), flipped=False)
             except AttributeError: pass # Might be an older version of Kivy
         self.color = [1,1,1,1]
         self.repeat_num += 1
@@ -140,22 +96,21 @@ class MirrorCamera(Camera):
             self.repeat_interval = 0.2
             self.repeat_num = 0
             self.repeats = 0
-            Clock.schedule_once(lambda args: self.dispatch('on_capture_end'), self.repeat_interval)
+#            Clock.schedule_once(lambda args: self.dispatch('on_capture_end'), self.repeat_interval)
             return False
         elif self.repeats >  0:
             Clock.schedule_once(self.capture_image, self.repeat_interval)
             return True
-    def start_vid_capture(self, length, audio):
-        print "NOT IMPLEMENTED: Recording %d seconds of video%s" % (length, " and audio." if audio else '.')
-        filename = "/mnt/tmp/capture-%d_%f.ogv" % (self.index, time.time())
-        self._camera.capture_video_start(filename)
+    def start_vid_capture(self, length, mute=True):
+        raise NotImplemented('Video capture has been disabled for now.')
+        filename = "capture-%d_%f.ogv" % (self.index, time.time())
+        self._camera.capture_video_start(os.path.join(SAVE_PATH, filename), mute)
 #        Clock.schedule_once(self._finish_capture_video, length)
     def stop_vid_capture(self, dt = None):
         self._camera.capture_video_stop()
-        self.dispatch('on_capture_end')
+#        self.dispatch('on_capture_end')
         pass
 
-cameras = [MirrorCamera(index=0, resolution=(1280,960), size=(640,480), play=True), MirrorCamera(index=1, resolution=(1280,960), size=(640,480), play=True)] # Capture the highest possible resolution (current v4l + USB2 can't handle more than 720p) but only display low res. This give me highest possible image captures with a standard size widget regardless what cameras are used.
 
 class Main(App):
     def countdown(self, btn = None):
@@ -173,18 +128,18 @@ class Main(App):
             self.info.text = ''
             self.countdown_number.text = ''
             if self.countdown_info['capture_type'] == 'picture':
-                cameras[0].capture_image(repeats=3)
+                self.cam.capture_image(repeats=3)
             elif self.countdown_info['capture_type'] == 'video':
 #                self.recording_indicator.color = [0,1,0,1]
                 self.recording_indicator.opacity = 1
                 self.recording_indicator.text = '10'
                 self.vid_timer(self.recording_indicator)
-                cameras[0].start_vid_capture(length=10, audio=False)
+                self.cam.start_vid_capture(length=10, mute=True)
             elif self.countdown_info['capture_type'] == 'audio_video':
                 self.audio_recording_indicator.opacity = 1
                 self.audio_recording_indicator.text = '10'
                 self.vid_timer(self.audio_recording_indicator)
-                cameras[0].start_vid_capture(length=10, audio=True)
+                self.cam.start_vid_capture(length=10, mute=False)
             return False
         self.countdown_number.text = str(int(self.countdown_number.text)-1)
     def vid_timer(self, indicator): # indicator will actually be dt most of the time, but I ignore dt anyway.
@@ -197,7 +152,7 @@ class Main(App):
             Clock.schedule_once(self.vid_timer, 1)
         else:
             self.timer.text = ''
-            cameras[0].stop_vid_capture()
+            self.cam.stop_vid_capture()
     def display_reset(self, *args):
         self.info.text = "Touch screen to take photo"
         self.recording_indicator.opacity = 0
@@ -205,10 +160,11 @@ class Main(App):
     def build(self):
         self.root = FloatLayout()
 
-        cameras[0].pos_hint['center'] = [0.5,0.55]
-        cameras[0].size_hint = [1,0.9]
-        cameras[0].bind(on_capture_end=self.display_reset) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
-        self.root.add_widget(cameras[0])
+        self.cam = MirrorCamera(index=0, resolution=(1280,960), size=(640,480), play=True, video_src='sdkjnb')
+        self.cam.pos_hint['center'] = [0.5,0.55]
+        self.cam.size_hint = [1,0.9]
+        self.cam.bind(on_capture_end=self.display_reset) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
+        self.root.add_widget(self.cam)
 
         self.recording_indicator = Label(pos_hint={'top': 0.95, 'right': 0.95}, color=[1,1,1,1], size_hint=(0.05,0.05))
         with self.recording_indicator.canvas.before:
