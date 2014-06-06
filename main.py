@@ -1,13 +1,33 @@
 #!/usr/bin/python
-import os.path
+import os
 
+import uuid # Hopefully this module will *never* get used, but it's her as a fallback in case we run out of random adjective+animal combinations.
+import random
+with open('adjectives-list', 'r') as f:
+    adjectives = [line.strip() for line in f.readlines()]
+with open('animals-list', 'r') as f:
+    animals = [line.strip() for line in f.readlines()]
+def gen_random_string(used = [], attempt = 0):
+    adjective = random.choice(adjectives)
+    animal = random.choice(animals)
+    if attempt >= 110:
+        raise Exception('Tried %d times and could not find a unique random string.')
+    elif attempt >= 100:
+        random_string = str(uuid.uuid4())
+    elif attempt >= 50:
+        adjective += random.choice(adjectives)
+        random_string = adjective+animal
+    else:
+        random_string = adjective+animal
+    if random_string in used:
+        random_string = gen_random_string(used=used, attempt=attempt+1)
+    return random_string
 
 import kivy
 #kivy.require('1.6.0') # This is the version available in the Debian Wheezy apt repo, I would prefer to remain compatible with that.
 ### So with Kivy 1.6.0 on my netbook the scatter().rotation works, but the Camera().texture.flip_vertical() does no. Is this the Kivy version or the camera?
 ### Aww, Kivy 1.6.0 can't save camera textures either. :(
-# I give up 1.6.0 will not work with this at all
-
+# I give up, 1.6.0 will not work with this at all
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.clock import Clock
@@ -66,7 +86,7 @@ Builder.load_string("""
 class MirrorCamera(Camera):
     repeats = 0
     repeat_num = 0
-    repeat_interval = 0.2
+    repeat_interval = 0
     def __init__(self, *args, **kwargs):
         self.register_event_type('on_capture_end')
         super(MirrorCamera, self).__init__(*args, **kwargs)
@@ -75,11 +95,17 @@ class MirrorCamera(Camera):
         # This triggers when all repeated image captures are finished.
         # I use this to reset the info text when finished.
         pass
-    def capture_image(self, dt = None, repeats = 0, interval = 0.2):
+    def capture_image(self, dt = None, repeats = 0, interval = 0.3):
         # This function just sets the colour of the widget to lots of white to simulate a flash then tells the Clock to actually capture an image after rendering the next frame.
         # I split this into 2 functions because if capture th image before rendering the next frame the "flash" never gets rendered
         self.repeats = repeats
         self.repeat_interval = interval
+
+        self.rand_id = gen_random_string(used=os.listdir(SAVE_PATH))
+        self.save_dir = os.path.join(SAVE_PATH, self.rand_id)
+        os.mkdir(self.save_dir)
+        print self.save_dir
+
         self._pre_capture()
     def _pre_capture(self, dt = None):
         # The entire purpose of this function is to simulate a flash by setting the colour to all white.
@@ -90,15 +116,12 @@ class MirrorCamera(Camera):
         Clock.schedule_once(self._actual_capture, 0)
     def _actual_capture(self, dt = None):
         # Capture an image, then reset the simulated flash
-        filename = "capture-%d_%f.jpg" % (self.index, time.time())
-        if self.texture != None: # Camera not connected?
-            try: self.texture.save(os.path.join(SAVE_PATH, filename), flipped=False)
-            except AttributeError: pass # Might be an older version of Kivy
+        self.texture.save(os.path.join(self.save_dir, "%d.jpg" % self.repeat_num), flipped=False)
         self.color = [1,1,1,1]
         self.repeat_num += 1
         if self.repeat_num >= self.repeats or self.repeats == 0:
             self.repeat_num = 0
-#            Clock.schedule_once(lambda args: self.dispatch('on_capture_end'), self.repeat_interval)
+            Clock.schedule_once(lambda args: self.dispatch('on_capture_end'), self.repeat_interval)
             return False
         elif self.repeats >  0:
             Clock.schedule_once(self._pre_capture, self.repeat_interval)
@@ -106,6 +129,8 @@ class MirrorCamera(Camera):
 
 class Main(App):
     def start_countdown(self, *args):
+        self.file_info.text = ''
+        Clock.unschedule(self.clear_file_label)
         self.stop_countdown() # Stop any countdown already in progress.
         self._countdown(0) # Run it now otherwise it will take 1 second before the countdown starts.
         Clock.schedule_interval(self._countdown, 1) # Start a new countdown.
@@ -130,8 +155,13 @@ class Main(App):
         else:
             self.countdown_number.text = str(new_num)
         return True # Run this again on the next loop
-    def capture_end(self, *args):
+    def capture_end(self, cam = None, *args):
         self.info.text = "Press button to start countdown."
+        if cam != None:
+            self.file_info.text = "Your photos have been saved as '%s'" % cam.rand_id
+            Clock.schedule_once(self.clear_file_label, 5)
+    def clear_file_label(self, *args):
+        self.file_info.text = ''
     def build(self):
         self.root = FloatLayout()
 
@@ -142,16 +172,12 @@ class Main(App):
         self.root.add_widget(self.cam)
         self.cam.bind(on_touch_down=self.start_countdown)
 
-#        picture_btn = Button(size_hint=[0.33, 0.1], on_press=self.start_countdown,
-#                pos_hint={'top': 0.1, 'center_x': 0.5},
-#                text="Take photo",
-#                background_color=[1,0,0,1],
-#            )
-#        self.root.add_widget(picture_btn)
-
-        self.info = Label(color=[1,0,0,1], font_size=32, pos_hint={'center': [0.5,0.95]})
+        self.info = Label(color=[1,0,0,1], font_size=64, pos_hint={'center': [0.5,0.95]})
         self.root.add_widget(self.info)
         self.capture_end()
+
+        self.file_info = Label(color=[0,1,0,1], font_size=32, pos_hint={'center': [0.5,0.05]})
+        self.root.add_widget(self.file_info)
 
         self.countdown_number = Label(text='', color=[0,1,0,0.5], font_size=256, pos_hint={'center': [0.5,0.5]})
         self.root.add_widget(self.countdown_number)
