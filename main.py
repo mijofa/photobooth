@@ -8,22 +8,19 @@ import kivy
 ### Aww, Kivy 1.6.0 can't save camera textures either. :(
 # I give up 1.6.0 will not work with this at all
 
-from kivy.graphics.texture import Texture
-
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.clock import Clock
-from kivy.graphics import Rectangle
-from kivy.graphics import Color
 from kivy.uix.label import Label
 from kivy.uix.button import Button
-from kivy.uix.scatter import Scatter
-from kivy.uix.gridlayout import GridLayout
+from kivy.core.window import Window
 from kivy.uix.floatlayout import FloatLayout
 
+COUNTDOWN_LENGTH = 3
+
 #VIDEO_DEVICE = "/dev/v4l/by-id/usb-Vimicro_Corp._PC_Camera-video-index0" # Crappy camera
-VIDEO_DEVICE = "/dev/v4l/by-id/usb-046d_0825_6E2E6170-video-index0" # Good camera
-#VIDEO_DEVICE = "/dev/video0"
+#VIDEO_DEVICE = "/dev/v4l/by-id/usb-046d_0825_6E2E6170-video-index0" # Good camera
+VIDEO_DEVICE = "/dev/video0"
 SAVE_PATH = "/mnt/tmp"
 
 ## Seems CameraGStreamer got renamed between Kivy v1.6.0 and 1.8.0, this whole thing is a horrible hack anyway lets add more hackiness.
@@ -73,7 +70,7 @@ class MirrorCamera(Camera):
     def __init__(self, *args, **kwargs):
         self.register_event_type('on_capture_end')
         super(MirrorCamera, self).__init__(*args, **kwargs)
-        self._camera.bind(on_texture=lambda args: self.texture.flip_vertical()) # I use lambda here because self.texture.flip_vertical doesn't exist yet. # This line replaces the commented out _camera_loaded function above.
+        self._camera.bind(on_texture=lambda args: self.texture.flip_vertical()) # I use lambda here because self.texture.flip_vertical doesn't exist yet.
     def on_capture_end(self, *args, **kwargs):
         # This triggers when all repeated image captures are finished.
         # I use this to reset the info text when finished.
@@ -108,71 +105,69 @@ class MirrorCamera(Camera):
             return True
 
 class Main(App):
-    def countdown(self, btn = None):
-        if btn != None and type(btn) != float and type(btn) != int:
-            Clock.unschedule(self.countdown)
-            self.countdown_info = btn.countdown_info
+    def start_countdown(self, *args):
+        self.stop_countdown() # Stop any countdown already in progress.
+        self._countdown(0) # Run it now otherwise it will take 1 second before the countdown starts.
+        Clock.schedule_interval(self._countdown, 1) # Start a new countdown.
+        return True
+    def stop_countdown(self):
+        self.countdown_number.text = ''
+        Clock.unschedule(self._countdown)
+        self.capture_end()
+    def _countdown(self, dt = None):
         if self.countdown_number.text == '': # Countdown hasn't been run yet.
-            Clock.schedule_interval(self.countdown, 1)
             self.info.text = "Get ready..."
-            self.countdown_number.text = '3' # FINDME: Countdown length.
-            return True
-        elif self.countdown_number.text == '1':
-            self.info.text = self.countdown_info['final_text']
-        elif self.countdown_number.text == '0': # Finished the countdown.
-            self.info.text = ''
+            self.countdown_number.text = str(COUNTDOWN_LENGTH)
+            return True # Run this again on the next loop
+        elif self.countdown_number.text == 'Smile!': # Finished the countdown.
             self.countdown_number.text = ''
-            if self.countdown_info['capture_type'] == 'picture':
-                self.cam.capture_image(repeats=3)
-            return False
-        self.countdown_number.text = str(int(self.countdown_number.text)-1)
-    def display_reset(self, *args):
-        self.info.text = "Touch screen to take photo"
-        self.recording_indicator.opacity = 0
-        self.audio_recording_indicator.opacity = 0
+            self.cam.capture_image(repeats=3)
+            return False # Stop running this
+        new_num = int(self.countdown_number.text)-1
+        if new_num == 0:
+            self.countdown_number.text = 'Smile!'
+            self.info.text = ''
+        else:
+            self.countdown_number.text = str(new_num)
+        return True # Run this again on the next loop
+    def capture_end(self, *args):
+        self.info.text = "Press button to start countdown."
     def build(self):
         self.root = FloatLayout()
 
         self.cam = MirrorCamera(index=0, resolution=(1280,960), play=True, stopped=False)
-        self.cam.pos_hint['center'] = [0.5,0.55]
-        self.cam.size_hint = [1,0.9]
-        self.cam.bind(on_capture_end=self.display_reset)
+        self.cam.pos_hint['center'] = [0.5,05]
+        self.cam.size_hint = [1,1]
+        self.cam.bind(on_capture_end=self.capture_end)
         self.root.add_widget(self.cam)
+        self.cam.bind(on_touch_down=self.start_countdown)
 
-        self.recording_indicator = Label(pos_hint={'top': 0.95, 'right': 0.95}, color=[1,1,1,1], size_hint=(0.05,0.05))
-        with self.recording_indicator.canvas.before:
-            self.recording_indicator.background_image = Rectangle(source='rec_noaud.png', size=self.recording_indicator.size, pos=self.recording_indicator.pos)
-        self.recording_indicator.opacity = 0
+#        picture_btn = Button(size_hint=[0.33, 0.1], on_press=self.start_countdown,
+#                pos_hint={'top': 0.1, 'center_x': 0.5},
+#                text="Take photo",
+#                background_color=[1,0,0,1],
+#            )
+#        self.root.add_widget(picture_btn)
 
-        self.audio_recording_indicator = Label(pos_hint={'top': 0.95, 'right': 0.95}, color=[1,1,1,1], size_hint=(0.05,0.05))
-        with self.audio_recording_indicator.canvas.before:
-            self.audio_recording_indicator.background_image = Rectangle(source='rec_aud.png', size=self.audio_recording_indicator.size, pos=self.audio_recording_indicator.pos)
-        self.audio_recording_indicator.opacity = 0
-
-        def update_background(instance, value):
-            instance.background_image.size = instance.size[0], instance.size[0] # Using size_hint above doesn't garauntee a square, but I want the circle size to be locked to being a square.
-            instance.background_image.pos = instance.pos
-        self.recording_indicator.bind(size=update_background, pos=update_background)
-        self.audio_recording_indicator.bind(size=update_background, pos=update_background)
-        self.root.add_widget(self.recording_indicator)
-        self.root.add_widget(self.audio_recording_indicator)
-
-        picture_btn = Button(size_hint=[0.33, 0.1], on_press=self.countdown,
-                pos_hint={'top': 0.1, 'center_x': 0.5},
-                text="Picture",
-                background_color=[0,0,1,1],
-            )
-        picture_btn.countdown_info = {
-                'final_text': "Smile!",
-                'capture_type': 'picture'
-            }
-        self.root.add_widget(picture_btn)
-
-        self.info = Label(text="Touch screen to take photo", color=[1,0,0,1], font_size=32, pos_hint={'center': [0.5,0.95]})
+        self.info = Label(color=[1,0,0,1], font_size=32, pos_hint={'center': [0.5,0.95]})
         self.root.add_widget(self.info)
+        self.capture_end()
 
         self.countdown_number = Label(text='', color=[0,1,0,0.5], font_size=256, pos_hint={'center': [0.5,0.5]})
         self.root.add_widget(self.countdown_number)
+
+
+        ### Get keyboard keypress
+        def kbd_closed(*args, **kwargs):
+            # Apparently I should be doing some unbinding and keyboard releasing here, but I've never seen it get triggered so I'm not going to do anything, but I will leave it here just in case.
+            print 'Keyboard closed.'
+            print args, kwargs
+        kbd = Window.request_keyboard(None, self.cam) #, 'text')
+        kbd.bind(
+                on_key_down=self.start_countdown,
+#                on_key_up= ,
+        )
+
 
         return self.root
 
