@@ -158,10 +158,6 @@ class Main(App):
 
 
         ### Get keyboard keypress
-        def kbd_closed(*args, **kwargs):
-            # Apparently I should be doing some unbinding and keyboard releasing here, but I've never seen it get triggered so I'm not going to do anything, but I will leave it here just in case.
-            print 'Keyboard closed.'
-            print args, kwargs
         kbd = Window.request_keyboard(None, self.cam) #, 'text')
         kbd.bind(
                 on_key_down=self.start_countdown,
