@@ -136,7 +136,7 @@ class Main(App):
         self.root = FloatLayout()
 
         self.cam = MirrorCamera(index=0, resolution=(1280,960), play=True, stopped=False)
-        self.cam.pos_hint['center'] = [0.5,05]
+        self.cam.pos_hint['center'] = [0.5,0.5]
         self.cam.size_hint = [1,1]
         self.cam.bind(on_capture_end=self.capture_end)
         self.root.add_widget(self.cam)
