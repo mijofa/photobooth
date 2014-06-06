@@ -8,6 +8,8 @@ import kivy
 ### Aww, Kivy 1.6.0 can't save camera textures either. :(
 # I give up 1.6.0 will not work with this at all
 
+from kivy.graphics.texture import Texture
+
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.clock import Clock
@@ -19,7 +21,9 @@ from kivy.uix.scatter import Scatter
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.floatlayout import FloatLayout
 
-VIDEO_DEVICE = "/dev/v4l/by-id/usb-Vimicro_Corp._PC_Camera-video-index0"
+#VIDEO_DEVICE = "/dev/v4l/by-id/usb-Vimicro_Corp._PC_Camera-video-index0" # Crappy camera
+VIDEO_DEVICE = "/dev/v4l/by-id/usb-046d_0825_6E2E6170-video-index0" # Good camera
+#VIDEO_DEVICE = "/dev/video0"
 SAVE_PATH = "/mnt/tmp"
 
 ## Seems CameraGStreamer got renamed between Kivy v1.6.0 and 1.8.0, this whole thing is a horrible hack anyway lets add more hackiness.
@@ -74,18 +78,21 @@ class MirrorCamera(Camera):
         # This triggers when all repeated image captures are finished.
         # I use this to reset the info text when finished.
         pass
-    def capture_image(self, dt = None, repeats = None, interval = None):
+    def capture_image(self, dt = None, repeats = 0, interval = 0.2):
         # This function just sets the colour of the widget to lots of white to simulate a flash then tells the Clock to actually capture an image after rendering the next frame.
         # I split this into 2 functions because if capture th image before rendering the next frame the "flash" never gets rendered
+        self.repeats = repeats
+        self.repeat_interval = interval
+        self._pre_capture()
+    def _pre_capture(self, dt = None):
+        # The entire purpose of this function is to simulate a flash by setting the colour to all white.
+        ## NOTE: Stop trying to put this into the _actual_capture function!!! It can't work.
+        ## Setting the screen to white, and setting it back to normal needs to be in different clock cycles otherwise Kivy doesn't render the screen in between and you end up with no flash at all.
+        ## So this function tells Kivy to call the _actual_capture function on the next clock cycle.
         self.color = [5,5,5,1]
-        if repeats != None:
-            self.repeats = repeats
-        if interval != None:
-            self.repeat_interval = interval
         Clock.schedule_once(self._actual_capture, 0)
     def _actual_capture(self, dt = None):
         # Capture an image, then reset the simulated flash
-
         filename = "capture-%d_%f.jpg" % (self.index, time.time())
         if self.texture != None: # Camera not connected?
             try: self.texture.save(os.path.join(SAVE_PATH, filename), flipped=False)
@@ -93,24 +100,12 @@ class MirrorCamera(Camera):
         self.color = [1,1,1,1]
         self.repeat_num += 1
         if self.repeat_num >= self.repeats or self.repeats == 0:
-            self.repeat_interval = 0.2
             self.repeat_num = 0
-            self.repeats = 0
 #            Clock.schedule_once(lambda args: self.dispatch('on_capture_end'), self.repeat_interval)
             return False
         elif self.repeats >  0:
-            Clock.schedule_once(self.capture_image, self.repeat_interval)
+            Clock.schedule_once(self._pre_capture, self.repeat_interval)
             return True
-    def start_vid_capture(self, length, mute=True):
-        raise NotImplemented('Video capture has been disabled for now.')
-        filename = "capture-%d_%f.ogv" % (self.index, time.time())
-        self._camera.capture_video_start(os.path.join(SAVE_PATH, filename), mute)
-#        Clock.schedule_once(self._finish_capture_video, length)
-    def stop_vid_capture(self, dt = None):
-        self._camera.capture_video_stop()
-#        self.dispatch('on_capture_end')
-        pass
-
 
 class Main(App):
     def countdown(self, btn = None):
@@ -129,30 +124,8 @@ class Main(App):
             self.countdown_number.text = ''
             if self.countdown_info['capture_type'] == 'picture':
                 self.cam.capture_image(repeats=3)
-            elif self.countdown_info['capture_type'] == 'video':
-#                self.recording_indicator.color = [0,1,0,1]
-                self.recording_indicator.opacity = 1
-                self.recording_indicator.text = '10'
-                self.vid_timer(self.recording_indicator)
-                self.cam.start_vid_capture(length=10, mute=True)
-            elif self.countdown_info['capture_type'] == 'audio_video':
-                self.audio_recording_indicator.opacity = 1
-                self.audio_recording_indicator.text = '10'
-                self.vid_timer(self.audio_recording_indicator)
-                self.cam.start_vid_capture(length=10, mute=False)
             return False
         self.countdown_number.text = str(int(self.countdown_number.text)-1)
-    def vid_timer(self, indicator): # indicator will actually be dt most of the time, but I ignore dt anyway.
-        if type(indicator) != int and type(indicator) != float:
-            self.timer = indicator
-            Clock.schedule_once(self.vid_timer, 1)
-            return
-        if self.timer.text != '0':
-            self.timer.text = str(int(self.timer.text)-1)
-            Clock.schedule_once(self.vid_timer, 1)
-        else:
-            self.timer.text = ''
-            self.cam.stop_vid_capture()
     def display_reset(self, *args):
         self.info.text = "Touch screen to take photo"
         self.recording_indicator.opacity = 0
@@ -160,10 +133,10 @@ class Main(App):
     def build(self):
         self.root = FloatLayout()
 
-        self.cam = MirrorCamera(index=0, resolution=(1280,960), size=(640,480), play=True, video_src='sdkjnb')
+        self.cam = MirrorCamera(index=0, resolution=(1280,960), play=True, stopped=False)
         self.cam.pos_hint['center'] = [0.5,0.55]
         self.cam.size_hint = [1,0.9]
-        self.cam.bind(on_capture_end=self.display_reset) # I believe using setattr is evil, but it seemed easier than any alternative I could think of.
+        self.cam.bind(on_capture_end=self.display_reset)
         self.root.add_widget(self.cam)
 
         self.recording_indicator = Label(pos_hint={'top': 0.95, 'right': 0.95}, color=[1,1,1,1], size_hint=(0.05,0.05))
@@ -185,7 +158,7 @@ class Main(App):
         self.root.add_widget(self.audio_recording_indicator)
 
         picture_btn = Button(size_hint=[0.33, 0.1], on_press=self.countdown,
-                pos_hint={'top': 0.1, 'left': '0'},
+                pos_hint={'top': 0.1, 'center_x': 0.5},
                 text="Picture",
                 background_color=[0,0,1,1],
             )
@@ -194,29 +167,6 @@ class Main(App):
                 'capture_type': 'picture'
             }
         self.root.add_widget(picture_btn)
-
-        video_btn = Button(size_hint=[0.33, 0.1], on_press=self.countdown,
-                pos_hint={'top': 0.1, 'center_x': 0.5},
-                text='10s Video',
-                background_color=[0,1,0,1],
-            )
-        video_btn.countdown_info = {
-                'final_text': "Action!",
-                'capture_type': 'video'
-            }
-        self.root.add_widget(video_btn)
-
-        audio_video_btn = Button(size_hint=[0.33, 0.1], on_press=self.countdown,
-                pos_hint={'top': 0.1, 'right': 1},
-                text='10s Video with audio',
-                background_color=[1,0,0,1],
-            )
-        audio_video_btn.countdown_info = {
-                'final_text': "Action!",
-                'capture_type': 'audio_video'
-            }
-
-        self.root.add_widget(audio_video_btn)
 
         self.info = Label(text="Touch screen to take photo", color=[1,0,0,1], font_size=32, pos_hint={'center': [0.5,0.95]})
         self.root.add_widget(self.info)
