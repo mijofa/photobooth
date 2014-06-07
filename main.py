@@ -1,20 +1,32 @@
 #!/usr/bin/python
+
+COUNTDOWN_LENGTH = 3
+
+#VIDEO_DEVICE = "/dev/v4l/by-id/usb-Vimicro_Corp._PC_Camera-video-index0" # Crappy camera
+#VIDEO_DEVICE = "/dev/v4l/by-id/usb-046d_0825_6E2E6170-video-index0" # Good camera
+VIDEO_DEVICE = "/dev/video0"
+SAVE_PATH = "/mnt/tmp"
+
 import os
 
-import uuid # Hopefully this module will *never* get used, but it's her as a fallback in case we run out of random adjective+animal combinations.
+import time
+import string # Hopefully this module will *never* get used, but it's her as a fallback in case we run out of random adjective+animal combinations.
 import random
 with open('adjectives-list', 'r') as f:
     adjectives = [line.strip() for line in f.readlines()]
 with open('animals-list', 'r') as f:
     animals = [line.strip() for line in f.readlines()]
 def gen_random_string(used = [], attempt = 0):
+    # I know the recursive functions are probably a bad thing, but I figured Python's recursion limit would make a good fallback in case mine fail.
     adjective = random.choice(adjectives)
     animal = random.choice(animals)
-    if attempt >= 110:
+    if attempt >= 602:
         raise Exception('Tried %d times and could not find a unique random string.')
-    elif attempt >= 100:
-        random_string = str(uuid.uuid4())
-    elif attempt >= 50:
+    if attempt >= 600:
+        random_string = time.time()
+    elif attempt >= 500:
+        random_string = ''.join(random.choice(string.lowercase+string.digits) for _ in range(8))
+    elif attempt >= 200:
         adjective += random.choice(adjectives)
         random_string = adjective+animal
     else:
@@ -32,16 +44,8 @@ from kivy.app import App
 from kivy.lang import Builder
 from kivy.clock import Clock
 from kivy.uix.label import Label
-from kivy.uix.button import Button
 from kivy.core.window import Window
 from kivy.uix.floatlayout import FloatLayout
-
-COUNTDOWN_LENGTH = 3
-
-#VIDEO_DEVICE = "/dev/v4l/by-id/usb-Vimicro_Corp._PC_Camera-video-index0" # Crappy camera
-#VIDEO_DEVICE = "/dev/v4l/by-id/usb-046d_0825_6E2E6170-video-index0" # Good camera
-VIDEO_DEVICE = "/dev/video0"
-SAVE_PATH = "/mnt/tmp"
 
 ## Seems CameraGStreamer got renamed between Kivy v1.6.0 and 1.8.0, this whole thing is a horrible hack anyway lets add more hackiness.
 ## I can't just reimport gst because that causes errors for some reason, so I need to set gst to the module already loaded in the kivy camera module.
@@ -63,8 +67,6 @@ class CoreCamera(CameraGst):
         super(CoreCamera, self).init_camera()
 kivy.core.camera.Camera = CoreCamera
 from kivy.uix.camera import Camera
-
-import time
 
 ### Mirror the camera widget
 ## Source: https://gist.github.com/alanctkc/c59ca9fd83fff6259289
@@ -104,7 +106,6 @@ class MirrorCamera(Camera):
         self.rand_id = gen_random_string(used=os.listdir(SAVE_PATH))
         self.save_dir = os.path.join(SAVE_PATH, self.rand_id)
         os.mkdir(self.save_dir)
-        print self.save_dir
 
         self._pre_capture()
     def _pre_capture(self, dt = None):
@@ -182,14 +183,12 @@ class Main(App):
         self.countdown_number = Label(text='', color=[0,1,0,0.5], font_size=256, pos_hint={'center': [0.5,0.5]})
         self.root.add_widget(self.countdown_number)
 
-
         ### Get keyboard keypress
         kbd = Window.request_keyboard(None, self.cam) #, 'text')
         kbd.bind(
                 on_key_down=self.start_countdown,
 #                on_key_up= ,
         )
-
 
         return self.root
 
