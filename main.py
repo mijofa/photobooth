@@ -47,6 +47,7 @@ from kivy.clock import Clock
 from kivy.uix.label import Label
 from kivy.core.window import Window
 from kivy.uix.floatlayout import FloatLayout
+from kivy.graphics import Ellipse, Color, Callback
 
 ## Seems CameraGStreamer got renamed between Kivy v1.6.0 and 1.8.0, this whole thing is a horrible hack anyway lets add more hackiness.
 ## I can't just reimport gst because that causes errors for some reason, so I need to set gst to the module already loaded in the kivy camera module.
@@ -91,18 +92,24 @@ class MirrorCamera(Camera):
     repeat_num = 0
     repeat_interval = 0
     def __init__(self, *args, **kwargs):
+        self.register_event_type('on_capture_start')
+        self.register_event_type('on_capture_timer')
         self.register_event_type('on_capture_end')
         super(MirrorCamera, self).__init__(*args, **kwargs)
         self._camera.bind(on_texture=lambda args: self.texture.flip_vertical()) # I use lambda here because self.texture.flip_vertical doesn't exist yet.
+    def on_capture_start(self, *args, **kwargs):
+        pass
     def on_capture_end(self, *args, **kwargs):
         # This triggers when all repeated image captures are finished.
         # I use this to reset the info text when finished.
         pass
-    def capture_image(self, dt = None, repeats = 0, interval = 0.3):
+    def on_capture_timer(self, *args, **kwargs):
+        pass
+    def capture_image(self, dt = None, repeats = 0):
         # This function just sets the colour of the widget to lots of white to simulate a flash then tells the Clock to actually capture an image after rendering the next frame.
         # I split this into 2 functions because if capture th image before rendering the next frame the "flash" never gets rendered
         self.repeats = repeats
-        self.repeat_interval = interval
+        self.repeat_interval = 1
 
         self.rand_id = gen_random_string(used=os.listdir(SAVE_PATH))
         self.save_dir = os.path.join(SAVE_PATH, self.rand_id)
@@ -114,6 +121,7 @@ class MirrorCamera(Camera):
         ## NOTE: Stop trying to put this into the _actual_capture function!!! It can't work.
         ## Setting the screen to white, and setting it back to normal needs to be in different clock cycles otherwise Kivy doesn't render the screen in between and you end up with no flash at all.
         ## So this function tells Kivy to call the _actual_capture function on the next clock cycle.
+        self.dispatch('on_capture_start')
         self.color = [5,5,5,1]
         Clock.schedule_once(self._actual_capture, 0)
     def _actual_capture(self, dt = None):
@@ -124,42 +132,76 @@ class MirrorCamera(Camera):
         self.repeat_num += 1
         if self.repeat_num >= self.repeats or self.repeats == 0:
             self.repeat_num = 0
-            Clock.schedule_once(lambda args: self.dispatch('on_capture_end'), self.repeat_interval)
-            return False
+            Clock.schedule_once(lambda args: self.dispatch('on_capture_end'), 0.3)
         elif self.repeats >  0:
+            self.dispatch('on_capture_timer')
             Clock.schedule_once(self._pre_capture, self.repeat_interval)
-            return True
+        return
 
 class Main(App):
+    time = 0.0
     def start_countdown(self, *args):
         self.file_info.text = ''
         Clock.unschedule(self.clear_file_label)
         self.stop_countdown() # Stop any countdown already in progress.
-        self._countdown(0) # Run it now otherwise it will take 1 second before the countdown starts.
-        Clock.schedule_interval(self._countdown, 1) # Start a new countdown.
+        self._countdown() # Run it now otherwise it will take 1 second before the countdown starts.
+        Clock.schedule_interval(self._countdown, 0.01) # Start a new countdown.
         return True
-    def stop_countdown(self):
-        self.countdown_number.text = ''
+    def stop_countdown(self, *args):
         Clock.unschedule(self._countdown)
-        self.capture_end()
-    def _countdown(self, dt = None):
-        if self.countdown_number.text == '': # Countdown hasn't been run yet.
-            self.info.text = "Get ready..."
-            self.countdown_number.text = str(COUNTDOWN_LENGTH)
-            return True # Run this again on the next loop
-        elif self.countdown_number.text == 'Smile!': # Finished the countdown.
-            self.countdown_number.text = ''
-            self.cam.capture_image(repeats=3)
-            return False # Stop running this
-        new_num = int(self.countdown_number.text)-1
-        if new_num == 0:
-            self.countdown_number.text = 'Smile!'
-            self.info.text = ''
+        self.countdown_number.text = ''
+        Clock.unschedule(self.single_second_countdown)
+        self.countdown_number.angle_start = 360
+        self.countdown_number.bg_col = (1,0,0,0.5)
+    def single_second_countdown(self, dt=0):
+        if type(dt) != int and type(dt) != float:
+            self.time = 0.0
+            Clock.schedule_interval(self.single_second_countdown, 0.01)
+            self.countdown_number.angle_start = 0
+            self.countdown_number.bg_col = (0,0,1,0.5)
+            self.countdown_number.cb.ask_update()
+            return
+        self.time += dt
+        self.countdown_number.angle_start = self.time*360
+        if self.countdown_number.angle_start > 360:
+            self.countdown_number.angle_start = 360
+        self.countdown_number.cb.ask_update()
+        if self.time >= 1:
+            return False
         else:
-            self.countdown_number.text = str(new_num)
+            return True
+    def _countdown(self, dt = None):
+        if not dt == None:
+            self.time += dt
+            if self.time == 0:
+                self.countdown_number.angle_start = 0
+            else:
+                self.countdown_number.angle_start = self.time*360
+            self.countdown_number.cb.ask_update()
+        if self.time >= 1 or dt == None:
+            self.time = 0
+            if self.countdown_number.text == '': # Countdown hasn't been run yet.
+                self.info.text = "Get ready..."
+                self.countdown_number.text = str(COUNTDOWN_LENGTH)
+                return True # Run this again on the next loop
+            elif self.countdown_number.text == 'Smile!': # Finished the countdown.
+                self.countdown_number.angle_start = 360
+                self.countdown_number.bg_col = (1,0,0,0.5)
+                self.countdown_number.text = ''
+                self.cam.capture_image(repeats=3)
+                return False # Stop running this
+            new_num = int(self.countdown_number.text)-1
+            if new_num == 0:
+                self.countdown_number.bg_col = (0,0,1,0.5)
+                self.countdown_number.text = 'Smile!'
+                self.info.text = ''
+            else:
+                self.countdown_number.text = str(new_num)
         return True # Run this again on the next loop
     def capture_end(self, cam = None, *args):
         self.info.text = "Press button to start countdown."
+        self.countdown_number.angle_start = 360
+        self.countdown_number.bg_col = (1,0,0,0.5)
         if cam != None:
             self.file_info.text = "Your photos have been saved as '%s'" % cam.rand_id
             Clock.schedule_once(self.clear_file_label, 10)
@@ -171,19 +213,23 @@ class Main(App):
         self.cam = MirrorCamera(index=0, resolution=(1280,960), play=True, stopped=False)
         self.cam.pos_hint['center'] = [0.5,0.5]
         self.cam.size_hint = [1,1]
+        self.cam.bind(on_capture_start=self.stop_countdown)
         self.cam.bind(on_capture_end=self.capture_end)
+        self.cam.bind(on_capture_timer=self.single_second_countdown)
         self.root.add_widget(self.cam)
         self.cam.bind(on_touch_down=self.start_countdown)
 
         self.info = Label(color=[1,0,0,1], font_size=64, pos_hint={'center': [0.5,0.95]})
         self.root.add_widget(self.info)
-        self.capture_end()
 
         self.file_info = Label(color=[0,1,0,1], font_size=32, pos_hint={'center': [0.5,0.05]})
         self.root.add_widget(self.file_info)
 
-        self.countdown_number = Label(text='', color=[0,1,0,0.5], font_size=256, pos_hint={'center': [0.5,0.5]})
+        self.countdown_number = Label(text='', color=[0,1,0,0.5], font_size=256, pos_hint={'center': [0.5,0.5]},size_hint=[0.25,0.25])
         self.root.add_widget(self.countdown_number)
+        with self.countdown_number.canvas:
+            self.countdown_number.cb = Callback(self.redraw_timer)
+        self.countdown_number.bind(size=lambda a, b: self.countdown_number.cb.ask_update(), pos=lambda a, b: self.countdown_number.cb.ask_update())
 
         ### Get keyboard keypress
         kbd = Window.request_keyboard(None, self.cam) #, 'text')
@@ -192,6 +238,16 @@ class Main(App):
 #                on_key_up= ,
         )
 
+        self.capture_end() # This sets some of the display correctly
         return self.root
+    def redraw_timer(self, cb):
+        instance = self.countdown_number
+        instance.canvas.before.clear()
+        with instance.canvas.before:
+            Color(*instance.bg_col)
+            Ellipse(
+                    angle_end=360,angle_start=instance.angle_start,
+                    pos=instance.pos,size=instance.size,
+            )
 
 Main().run()
