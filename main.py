@@ -27,10 +27,11 @@ def gen_random_string(used = [], attempt = 0):
     elif attempt >= 500:
         random_string = ''.join(random.choice(string.lowercase+string.digits) for _ in range(8))
     elif attempt >= 200:
+        adjective += ' '
         adjective += random.choice(adjectives)
-        random_string = adjective+animal
+        random_string = adjective+' '+animal
     else:
-        random_string = adjective+animal
+        random_string = adjective+' '+animal
     if random_string in used:
         random_string = gen_random_string(used=used, attempt=attempt+1)
     return random_string
@@ -117,7 +118,8 @@ class MirrorCamera(Camera):
         Clock.schedule_once(self._actual_capture, 0)
     def _actual_capture(self, dt = None):
         # Capture an image, then reset the simulated flash
-        self.texture.save(os.path.join(self.save_dir, "%d.jpg" % self.repeat_num), flipped=False)
+        try: self.texture.save(os.path.join(self.save_dir, "%d.jpg" % self.repeat_num), flipped=False)
+        except: pass
         self.color = [1,1,1,1]
         self.repeat_num += 1
         if self.repeat_num >= self.repeats or self.repeats == 0:
@@ -160,7 +162,7 @@ class Main(App):
         self.info.text = "Press button to start countdown."
         if cam != None:
             self.file_info.text = "Your photos have been saved as '%s'" % cam.rand_id
-            Clock.schedule_once(self.clear_file_label, 5)
+            Clock.schedule_once(self.clear_file_label, 10)
     def clear_file_label(self, *args):
         self.file_info.text = ''
     def build(self):
