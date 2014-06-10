@@ -158,7 +158,7 @@ class Main(App):
             self.time = 0.0
             Clock.schedule_interval(self.single_second_countdown, 0.01)
             self.countdown_number.angle_start = 0
-            self.countdown_number.bg_col = (0,0,1,0.5)
+            self.countdown_number.bg_col = (0.25,1,0.25,0.5)
             self.countdown_number.cb.ask_update()
             return
         self.time += dt
@@ -175,26 +175,32 @@ class Main(App):
             self.time += dt
             if self.time == 0:
                 self.countdown_number.angle_start = 0
+            elif self.time >= 1:
+                self.countdown_number.angle_start = 360
             else:
                 self.countdown_number.angle_start = self.time*360
             self.countdown_number.cb.ask_update()
         if self.time >= 1 or dt == None:
             self.time = 0
-            if self.countdown_number.text == '': # Countdown hasn't been run yet.
-                self.info.text = "Get ready..."
-                self.countdown_number.text = str(COUNTDOWN_LENGTH)
-                return True # Run this again on the next loop
-            elif self.countdown_number.text == 'Smile!': # Finished the countdown.
+            if self.countdown_number.text == '3':
+                self.countdown_number.bg_col = (1,0.5,0,0.5)
+            if self.countdown_number.text == '2':
+                self.countdown_number.bg_col = (1,1,0,0.5)
+            elif self.countdown_number.text == '' and self.info.text == 'Smile!': # Finished the countdown.
                 self.countdown_number.angle_start = 360
                 self.countdown_number.bg_col = (1,0,0,0.5)
                 self.countdown_number.text = ''
                 self.cam.capture_image(repeats=3)
                 return False # Stop running this
+            elif self.countdown_number.text == '': # Countdown hasn't been run yet.
+                self.info.text = "Get ready..."
+                self.countdown_number.text = str(COUNTDOWN_LENGTH)
+                return True # Run this again on the next loop
             new_num = int(self.countdown_number.text)-1
             if new_num == 0:
-                self.countdown_number.bg_col = (0,0,1,0.5)
-                self.countdown_number.text = 'Smile!'
-                self.info.text = ''
+                self.info.text = 'Smile!'
+                self.countdown_number.text = ''
+                self.countdown_number.bg_col = (0,1,0,0.5)
             else:
                 self.countdown_number.text = str(new_num)
         return True # Run this again on the next loop
@@ -210,7 +216,7 @@ class Main(App):
     def build(self):
         self.root = FloatLayout()
 
-        self.cam = MirrorCamera(index=0, resolution=(1280,960), play=True, stopped=False)
+        self.cam = MirrorCamera(index=0, resolution=(1280,960), play=True, stopped=False, allow_stretch=True)
         self.cam.pos_hint['center'] = [0.5,0.5]
         self.cam.size_hint = [1,1]
         self.cam.bind(on_capture_start=self.stop_countdown)
@@ -241,13 +247,17 @@ class Main(App):
         self.capture_end() # This sets some of the display correctly
         return self.root
     def redraw_timer(self, cb):
+        pos = (
+                (self.root.size[0]-256)/2,
+                (self.root.size[1]-256)/2,
+                )
         instance = self.countdown_number
         instance.canvas.before.clear()
         with instance.canvas.before:
             Color(*instance.bg_col)
             Ellipse(
                     angle_end=360,angle_start=instance.angle_start,
-                    pos=instance.pos,size=instance.size,
+                    pos=pos,size=(256,256),
             )
 
 Main().run()
