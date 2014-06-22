@@ -1,13 +1,18 @@
 #!/usr/bin/python
-
 COUNTDOWN_LENGTH = 3
 
-#VIDEO_DEVICE = "/dev/v4l/by-id/usb-Vimicro_Corp._PC_Camera-video-index0" # Crappy camera
-#VIDEO_DEVICE = "/dev/v4l/by-id/usb-046d_0825_6E2E6170-video-index0" # Good camera
 VIDEO_DEVICE = "/dev/video0"
-SAVE_PATH = "/mnt/tmp"
+SAVE_PATH = "/srv/share/Photos"
 
+import sys, getopt
 import os
+options, arguments = getopt.gnu_getopt(sys.argv[1:], 'd:')
+for o, a in options:
+    if o == '-d':
+        VIDEO_DEVICE = a
+for a in arguments:
+    if os.path.isdir(a):
+        SAVE_PATH = os.path.normpath(a)
 
 import time
 import string # Hopefully this module will *never* get used, but it's her as a fallback in case we run out of random adjective+animal combinations.
