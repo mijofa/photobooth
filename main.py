@@ -230,10 +230,10 @@ class Main(App):
         self.root.add_widget(self.cam)
         self.cam.bind(on_touch_down=self.start_countdown)
 
-        self.info = Label(color=[1,0,0,1], font_size=64, pos_hint={'center': [0.5,0.95]})
+        self.info = Label(color=[1,0,0,1], font_size=96, pos_hint={'center': [0.5,0.9]})
         self.root.add_widget(self.info)
 
-        self.file_info = Label(color=[0,1,0,1], font_size=32, pos_hint={'center': [0.5,0.05]})
+        self.file_info = Label(color=[0,1,0,1], font_size=64, pos_hint={'center': [0.5,0.05]})
         self.root.add_widget(self.file_info)
 
         self.countdown_number = Label(text='', color=[0,1,0,0.5], font_size=256, pos_hint={'center': [0.5,0.5]},size_hint=[0.25,0.25])
