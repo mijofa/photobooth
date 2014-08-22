@@ -1,0 +1,15 @@
+#!/bin/bash
+tmpdir="/mnt/tmp"
+destdir="/srv/share/Photos"
+inotifywait --monitor --recursive --event create --event close_write --format "%e;%w%f" "$tmpdir" | while read line ; do
+  event="$(cut -d';' -f'1' <<< "$line")"
+  filename="$(cut -d';' -f'2-' <<< "$line")"
+  if [ "$event" = "CREATE" ] && [ ! -d "$filename" ] ; then
+    continue
+  fi
+  if [ -d "$filename" ] ; then
+    mkdir "$destdir${filename##$tmpdir}"
+  else
+    mv "$filename" "$destdir${filename##$tmpdir}" && rm "$filename"
+  fi
+done

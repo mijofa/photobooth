@@ -2,7 +2,7 @@
 COUNTDOWN_LENGTH = 3
 
 VIDEO_DEVICE = "/dev/video0"
-SAVE_PATH = "/srv/share/Photos"
+SAVE_PATH = "/mnt/tmp"
 
 import sys, getopt
 import os
