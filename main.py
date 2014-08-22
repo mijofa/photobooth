@@ -4,7 +4,6 @@ COUNTDOWN_LENGTH = 3
 VIDEO_DEVICE = "/dev/video0"
 SAVE_PATH = "/srv/share/Photos"
 
-import threading
 import sys, getopt
 import os
 options, arguments = getopt.gnu_getopt(sys.argv[1:], 'd:')
@@ -132,7 +131,8 @@ class MirrorCamera(Camera):
         Clock.schedule_once(self._actual_capture, 0)
     def _actual_capture(self, dt = None):
         # Capture an image, then reset the simulated flash
-        threading.Thread(target=lambda:self.texture.save(os.path.join(self.save_dir, "%d.jpg" % self.repeat_num), flipped=False)).start()
+        try: self.texture.save(os.path.join(self.save_dir, "%d.jpg" % self.repeat_num), flipped=False)
+        except: pass
         self.color = [1,1,1,1]
         self.repeat_num += 1
         if self.repeat_num >= self.repeats or self.repeats == 0:
