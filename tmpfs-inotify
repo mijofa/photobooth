@@ -10,6 +10,6 @@ inotifywait --monitor --recursive --event create --event close_write --format "%
   if [ -d "$filename" ] ; then
     mkdir "$destdir${filename##$tmpdir}"
   else
-    mv "$filename" "$destdir${filename##$tmpdir}" && rm "$filename"
+    mv "$filename" "$destdir${filename##$tmpdir}"
   fi
 done
