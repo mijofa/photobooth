@@ -4,6 +4,7 @@ COUNTDOWN_LENGTH = 3
 VIDEO_DEVICE = "/dev/video0"
 SAVE_PATH = "/srv/share/Photos/"
 
+import subprocess # Only used to run convert for creating the folder thumbnail
 import sys, getopt
 import os
 options, arguments = getopt.gnu_getopt(sys.argv[1:], 'd:')
