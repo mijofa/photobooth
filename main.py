@@ -2,9 +2,8 @@
 COUNTDOWN_LENGTH = 3
 
 VIDEO_DEVICE = "/dev/video0"
-SAVE_PATH = "/srv/share/Photos"
+SAVE_PATH = "/srv/share/Photos/"
 
-import threading
 import sys, getopt
 import os
 options, arguments = getopt.gnu_getopt(sys.argv[1:], 'd:')
@@ -124,16 +123,20 @@ class MirrorCamera(Camera):
         self._pre_capture()
     def _pre_capture(self, dt = None):
         # The entire purpose of this function is to simulate a flash by setting the colour to all white.
-        ## NOTE: Stop trying to put this into the _actual_capture function!!! It can't work.
+        ## NOTE: Stop trying to put this, _end_flash, and _actual_capture into one function!!! It can't work.
         ## Setting the screen to white, and setting it back to normal needs to be in different clock cycles otherwise Kivy doesn't render the screen in between and you end up with no flash at all.
-        ## So this function tells Kivy to call the _actual_capture function on the next clock cycle.
+        ## And the capture step causes the UI to block while waiting for it to finish, so I can't have the flash happening while saving
         self.dispatch('on_capture_start')
         self.color = [5,5,5,1]
+        Clock.schedule_once(self._end_flash, 0.1)
+    def _end_flash(self, dt = None):
+        # The entire purpose of this function is to simulate a flash by setting the colour to all white.
+        self.color = [1,1,1,1]
         Clock.schedule_once(self._actual_capture, 0)
     def _actual_capture(self, dt = None):
         # Capture an image, then reset the simulated flash
-        threading.Thread(target=lambda:self.texture.save(os.path.join(self.save_dir, "%d.jpg" % self.repeat_num), flipped=False)).start()
-        self.color = [1,1,1,1]
+        print 'saving'
+        self.texture.save(os.path.join(self.save_dir, "%d.jpg" % self.repeat_num), flipped=False)
         self.repeat_num += 1
         if self.repeat_num >= self.repeats or self.repeats == 0:
             self.repeat_num = 0
@@ -210,12 +213,12 @@ class Main(App):
                 self.countdown_number.text = str(new_num)
         return True # Run this again on the next loop
     def capture_end(self, cam = None, *args):
-        self.info.text = "Press button to start countdown."
+        self.info.text = "Press button to take 3 photos"
         self.countdown_number.angle_start = 360
         self.countdown_number.bg_col = (1,0,0,0.5)
         if cam != None:
             self.file_info.text = "Your photos have been saved as '%s'" % cam.rand_id
-            Clock.schedule_once(self.clear_file_label, 10)
+            Clock.schedule_once(self.clear_file_label, 15)
             subprocess.check_call(['gm', 'convert', os.path.join(SAVE_PATH, cam.rand_id, '0.jpg'), '-thumbnail', '119', os.path.join(SAVE_PATH, cam.rand_id, 'folder.jpg')]) # The number here (119) should match the thumbsize number in the guestbook application, but since they don't run on the same machine and are completely separate applications there is no nice way to keep them in sync other than doing so manually.
     def clear_file_label(self, *args):
         self.file_info.text = ''
@@ -227,7 +230,7 @@ class Main(App):
         self.cam.size_hint = [1,1]
         self.cam.bind(on_capture_start=self.stop_countdown)
         self.cam.bind(on_capture_end=self.capture_end)
-        self.cam.bind(on_capture_timer=self.single_second_countdown)
+#        self.cam.bind(on_capture_timer=lambda _:setattr(self.info, 'text', "Wait, there's more"))
         self.root.add_widget(self.cam)
         self.cam.bind(on_touch_down=self.start_countdown)
 
