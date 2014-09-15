@@ -136,7 +136,6 @@ class MirrorCamera(Camera):
         Clock.schedule_once(self._actual_capture, 0)
     def _actual_capture(self, dt = None):
         # Capture an image, then reset the simulated flash
-        print 'saving'
         self.texture.save(os.path.join(self.save_dir, "%d.jpg" % self.repeat_num), flipped=False)
         self.repeat_num += 1
         if self.repeat_num >= self.repeats or self.repeats == 0:
@@ -221,6 +220,7 @@ class Main(App):
             self.file_info.text = "Your photos have been saved as '%s'" % cam.rand_id
             Clock.schedule_once(self.clear_file_label, 15)
             subprocess.check_call(['gm', 'convert', os.path.join(SAVE_PATH, cam.rand_id, '0.jpg'), '-thumbnail', '119', os.path.join(SAVE_PATH, cam.rand_id, 'folder.jpg')]) # The number here (119) should match the thumbsize number in the guestbook application, but since they don't run on the same machine and are completely separate applications there is no nice way to keep them in sync other than doing so manually.
+            print "Taken photos:", cam.rand_id
     def clear_file_label(self, *args):
         self.file_info.text = ''
     def build(self):
