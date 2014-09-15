@@ -38,7 +38,7 @@ def gen_random_string(used = [], attempt = 0):
         random_string = adjective+' '+animal
     else:
         random_string = adjective+' '+animal
-    if random_string in used:
+    if random_string in used or len(random_string) > 16:
         random_string = gen_random_string(used=used, attempt=attempt+1)
     return random_string
 
@@ -216,6 +216,7 @@ class Main(App):
         if cam != None:
             self.file_info.text = "Your photos have been saved as '%s'" % cam.rand_id
             Clock.schedule_once(self.clear_file_label, 10)
+            subprocess.check_call(['gm', 'convert', os.path.join(SAVE_PATH, cam.rand_id, '0.jpg'), '-thumbnail', '119', os.path.join(SAVE_PATH, cam.rand_id, 'folder.jpg')]) # The number here (119) should match the thumbsize number in the guestbook application, but since they don't run on the same machine and are completely separate applications there is no nice way to keep them in sync other than doing so manually.
     def clear_file_label(self, *args):
         self.file_info.text = ''
     def build(self):
